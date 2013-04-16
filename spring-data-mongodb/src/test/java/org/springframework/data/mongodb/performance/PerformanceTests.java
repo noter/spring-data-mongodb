@@ -35,7 +35,10 @@ import org.springframework.core.Constants;
 import org.springframework.data.annotation.PersistenceConstructor;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.SimpleMongoDbFactory;
+import org.springframework.data.mongodb.core.convert.jackson.JacksonMappingMongoConverter;
+import org.springframework.data.mongodb.core.convert.jackson.JacksonMongoTemplate;
 import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.mongodb.core.mapping.MongoMappingContext;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.data.mongodb.repository.support.MongoRepositoryFactoryBean;
@@ -60,22 +63,25 @@ import com.mongodb.WriteConcern;
 public class PerformanceTests {
 
 	private static final String DATABASE_NAME = "performance";
-	private static final int NUMBER_OF_PERSONS = 30000;
+	private static final int NUMBER_OF_PERSONS = 70;
 	private static final StopWatch watch = new StopWatch();
 	private static final Collection<String> IGNORED_WRITE_CONCERNS = Arrays.asList("MAJORITY", "REPLICAS_SAFE",
 			"FSYNC_SAFE", "JOURNAL_SAFE");
 	private static final int COLLECTION_SIZE = 1024 * 1024 * 256; // 256 MB
-	private static final Collection<String> COLLECTION_NAMES = Arrays.asList("template", "driver", "person");
+	private static final Collection<String> COLLECTION_NAMES = Arrays.asList("template", "jackson", "driver", "person");
 
 	Mongo mongo;
 	MongoTemplate operations;
 	PersonRepository repository;
+	MongoTemplate jacksonOperations;
 
 	@Before
 	public void setUp() throws Exception {
 
 		this.mongo = new Mongo();
 		this.operations = new MongoTemplate(new SimpleMongoDbFactory(this.mongo, DATABASE_NAME));
+		SimpleMongoDbFactory simpleMongoDbFactory = new SimpleMongoDbFactory(this.mongo, DATABASE_NAME);
+		this.jacksonOperations = new JacksonMongoTemplate(simpleMongoDbFactory,new JacksonMappingMongoConverter(simpleMongoDbFactory,new MongoMappingContext()));
 
 		MongoRepositoryFactoryBean<PersonRepository, Person, ObjectId> factory = new MongoRepositoryFactoryBean<PersonRepository, Person, ObjectId>();
 		factory.setMongoOperations(operations);
@@ -85,13 +91,14 @@ public class PerformanceTests {
 		repository = factory.getObject();
 	}
 
-	@Test
+	//@Test
 	public void writeWithWriteConcerns() {
 		executeWithWriteConcerns(new WriteConcernCallback() {
 			public void doWithWriteConcern(String constantName, WriteConcern concern) {
 				writeHeadline("WriteConcern: " + constantName);
 				writingObjectsUsingPlainDriver("Writing %s objects using plain driver");
 				writingObjectsUsingMongoTemplate("Writing %s objects using template");
+				writingObjectsUsingMongoTemplateWithJackson("Writing %s objects using template with jackson");
 				writingObjectsUsingRepositories("Writing %s objects using repository");
 				writeFooter();
 			}
@@ -103,7 +110,7 @@ public class PerformanceTests {
 
 		mongo.setWriteConcern(WriteConcern.SAFE);
 
-		for (int i = 3; i > 0; i--) {
+		for (int i = 10; i > 0; i--) {
 
 			setupCollections();
 
@@ -117,6 +124,12 @@ public class PerformanceTests {
 			writingObjectsUsingMongoTemplate("Writing %s objects using template");
 			readingUsingTemplate("Reading all objects using template");
 			queryUsingTemplate("Executing query using template");
+			writeFooter();
+
+			writeHeadline("Template with Jackson");
+			writingObjectsUsingMongoTemplateWithJackson("Writing %s objects using template with jackson");
+			readingUsingTemplateWithJackson("Reading all objects using template with jackson");
+			queryUsingTemplateWithJackson("Executing query using template with jackson");
 			writeFooter();
 
 			writeHeadline("Repositories");
@@ -146,6 +159,16 @@ public class PerformanceTests {
 			}
 		});
 	}
+
+	private void queryUsingTemplateWithJackson(String template) {
+		executeWatchedWithTimeAndResultSize(template, new WatchCallback<List<Person>>() {
+			public List<Person> doInWatch() {
+				Query query = query(where("addresses.zipCode").regex(".*1.*"));
+				return operations.find(query, Person.class, "jackson");
+			}
+		});
+	}
+
 
 	private void queryUsingRepository(String template) {
 		executeWatchedWithTimeAndResultSize(template, new WatchCallback<List<Person>>() {
@@ -236,6 +259,20 @@ public class PerformanceTests {
 		});
 	}
 
+	private void writingObjectsUsingMongoTemplateWithJackson(String template) {
+
+		final List<Person> persons = getPersonObjects();
+
+		executeWatchedWithTime(template, new WatchCallback<Void>() {
+			public Void doInWatch() {
+				for (Person person : persons) {
+					jacksonOperations.save(person, "jackson");
+				}
+				return null;
+			}
+		});
+	}
+
 	private void readingUsingPlainDriver(String template) {
 
 		final DBCollection collection = mongo.getDB(DATABASE_NAME).getCollection("driver");
@@ -251,6 +288,14 @@ public class PerformanceTests {
 		executeWatchedWithTimeAndResultSize(String.format(template, NUMBER_OF_PERSONS), new WatchCallback<List<Person>>() {
 			public List<Person> doInWatch() {
 				return operations.findAll(Person.class, "template");
+			}
+		});
+	}
+
+	private void readingUsingTemplateWithJackson(String template) {
+		executeWatchedWithTimeAndResultSize(String.format(template, NUMBER_OF_PERSONS), new WatchCallback<List<Person>>() {
+			public List<Person> doInWatch() {
+				return jacksonOperations.findAll(Person.class, "jackson");
 			}
 		});
 	}
