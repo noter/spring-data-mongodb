@@ -128,6 +128,9 @@ public class ContextualMongoTemplateTests {
 		template.dropCollection(MyPerson.class);
 		template.dropCollection("collection");
 		template.dropCollection("personX");
+		template.dropCollection(Product.class);
+		template.dropCollection(Stock.class);
+		template.dropCollection(Attribute.class);
 	}
 
 	@Test
@@ -159,7 +162,7 @@ public class ContextualMongoTemplateTests {
 	 * @see DATAMONGO-488
 	 */
 	@Test
-	public void resolveCircleDBRefCorrectlyWithCollections() {
+	public void resolveCycleDBRefCorrectlyWithCollections() {
 
 		//Collection to collection
 		PersonWithAddressDBRef person = new PersonWithAddressDBRef();
@@ -215,7 +218,7 @@ public class ContextualMongoTemplateTests {
 	 * @see DATAMONGO-488
 	 */
 	@Test
-	public void resolveCircleDBRefCorrectlyWithOuterDb() {
+	public void resolveCycleDBRefCorrectlyWithOuterDb() {
 		PersonWithAddressDBRef person = new PersonWithAddressDBRef();
 		person.name = "Patryk";
 
@@ -248,8 +251,8 @@ public class ContextualMongoTemplateTests {
 		template.save(attribute);
 
 		Attribute attribute2 = new Attribute();
-		attribute.name = "Attribute two";
-		attribute.otherField = "Other field two";
+		attribute2.name = "Attribute two";
+		attribute2.otherField = "Other field two";
 
 		template.save(attribute2);
 
@@ -261,6 +264,7 @@ public class ContextualMongoTemplateTests {
 		template.save(product);
 
 		Stock stock = new Stock();
+		stock.id = BigInteger.ONE;
 		stock.price = BigDecimal.ONE;
 		stock.otherField = "Other field one";
 		stock.product = product;
@@ -279,11 +283,41 @@ public class ContextualMongoTemplateTests {
 		template.save(product);
 
 		Query query = Query.query(new Criteria());
-		query.fields().include("id").include("stocks.1.price").include("attributes").include("attributes.name");
+		query.fields().include("stocks.1").include("stocks.1.price").include("attributes").include("attributes.name");
 
 		Product result = template.findOne(query, Product.class);
 
 		assertThat(result.stocks.keySet(), hasSize(1));
+		assertThat(result.stocks.get(BigInteger.ONE).id,is(BigInteger.ONE));
+		assertThat(result.stocks.get(BigInteger.ONE).price,is(BigDecimal.ONE));
+		assertNull(result.stocks.get(BigInteger.ONE).otherField);
+		assertThat(result.attributes,hasSize(2));
+		assertNotNull(result.attributes.get(0).name);
+		assertNotNull(result.attributes.get(1).name);
+		assertNull(result.attributes.get(0).otherField);
+		assertNull(result.attributes.get(1).otherField);
+
+		query = Query.query(new Criteria());
+		query.fields().include("stocks.*.price");
+
+		result = template.findOne(query, Product.class);
+
+		assertThat(result.stocks.keySet(),hasSize(2));
+		assertNotNull(result.stocks.get(BigInteger.ONE).price);
+		assertNotNull(result.stocks.get(BigInteger.TEN).price);
+		assertNull(result.stocks.get(BigInteger.ONE).otherField);
+		assertNull(result.stocks.get(BigInteger.TEN).otherField);
+
+		query = Query.query(new Criteria());
+		query.fields().include("stocks.1.price");
+
+		result = template.findOne(query, Product.class);
+
+		assertThat(result.stocks.keySet(),hasSize(2));
+		assertNotNull(result.stocks.get(BigInteger.ONE).price);
+		assertNotNull(result.stocks.get(BigInteger.TEN).price);
+		assertNull(result.stocks.get(BigInteger.ONE).otherField);
+		assertNotNull(result.stocks.get(BigInteger.TEN).otherField);
 
 	}
 

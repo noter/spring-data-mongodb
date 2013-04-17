@@ -74,7 +74,7 @@ public class DeserializationContext {
 						for (String s : findMapFields(fieldName, fieldsToProcess.keySet())) {
 							entityFields.put(s, 1);
 						}
-						for (String s : findMapFiltringKeys(fieldName, fieldsToProcess.keySet())) {
+						for (String s : findMapFilteringKeys(fieldName, fieldsToProcess.keySet())) {
 							resolveEntityFields("", s, fieldsToProcess, mongoMappingContext, propertyType, fields);
 						}
 					} else if (containsOrStartWith(globalFieldName, fieldsToProcess.keySet())) {
@@ -122,7 +122,7 @@ public class DeserializationContext {
 		return toReturn;
 	}
 
-	private static Set<String> findMapFiltringKeys(String field, Set<String> fields) {
+	private static Set<String> findMapFilteringKeys(String field, Set<String> fields) {
 		Set<String> toReturn = new HashSet<String>();
 		for (String s : fields) {
 			if (s.equals(field) || s.equals(field + ".*")) {
